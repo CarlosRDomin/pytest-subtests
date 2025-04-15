@@ -28,6 +28,10 @@ from _pytest.outcomes import OutcomeException
 from _pytest.reports import TestReport
 from _pytest.runner import CallInfo
 from _pytest.runner import check_interactive_exception
+from _pytest.terminal import _color_for_type
+from _pytest.terminal import _color_for_type_default
+from _pytest.terminal import _get_line_with_reprcrash_message
+from _pytest.terminal import TerminalReporter
 from _pytest.unittest import TestCaseFunction
 
 
@@ -168,6 +172,18 @@ def _addSubTest(
                     self._originaladdSkip(testcase, reason)  # type: ignore[attr-defined]
 
 
+def _short_test_summary(self: TerminalReporter) -> None:
+    self._original_short_test_summary()  # type: ignore[attr-defined]
+    if self.reportchars and "p" in self.reportchars:
+        passed = self.stats.get("subtests passed") or []
+        for rep in passed:
+            color = _color_for_type.get("subtests passed", _color_for_type_default)
+            line = _get_line_with_reprcrash_message(
+                self.config, rep, self._tw, {color: True}
+            )
+            self.write_line(line)
+
+
 def pytest_configure(config: pytest.Config) -> None:
     TestCaseFunction.addSubTest = _addSubTest  # type: ignore[attr-defined]
     TestCaseFunction.failfast = False  # type: ignore[attr-defined]
@@ -200,6 +216,10 @@ def pytest_configure(config: pytest.Config) -> None:
         }
     )
 
+    if not hasattr(TerminalReporter, "_original_short_test_summary"):
+        TerminalReporter._original_short_test_summary = TerminalReporter.short_test_summary  # type: ignore[attr-defined]
+    TerminalReporter.short_test_summary = _short_test_summary  # type: ignore[method-assign]
+
 
 def pytest_unconfigure() -> None:
     if hasattr(TestCaseFunction, "addSubTest"):
@@ -209,6 +229,9 @@ def pytest_unconfigure() -> None:
     if hasattr(TestCaseFunction, "_originaladdSkip"):
         TestCaseFunction.addSkip = TestCaseFunction._originaladdSkip  # type: ignore[method-assign]
         del TestCaseFunction._originaladdSkip
+    if hasattr(TerminalReporter, "_original_short_test_summary"):
+        TerminalReporter.short_test_summary = TerminalReporter._original_short_test_summary  # type: ignore[method-assign]
+        del TerminalReporter._original_short_test_summary
 
 
 @pytest.fixture
